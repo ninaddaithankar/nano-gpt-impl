@@ -25,7 +25,7 @@ torch.manual_seed(1337)
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-# open the dataset
+# open and read the dataset
 # -------------------------------------------------------------------------------------------------------------------------
 with open('input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
@@ -33,7 +33,7 @@ with open('input.txt', 'r', encoding='utf-8') as f:
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-# process the dataset
+# tokenize the dataset
 # -------------------------------------------------------------------------------------------------------------------------
 tokens = sorted(set(text))
 vocab_size = len(tokens)
@@ -47,7 +47,7 @@ decode = lambda i: ''.join([itos[idx] for idx in i])
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-# divide the dataset
+# create train and validation splits
 # -------------------------------------------------------------------------------------------------------------------------
 data = torch.tensor(encode(text), dtype = torch.long)
 split_point = int(0.9*len(data))
@@ -57,7 +57,7 @@ val_data = data[split_point:]
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-# get batch from dataset
+# helper function to get a batch from dataset
 # -------------------------------------------------------------------------------------------------------------------------
 def get_batch(split):
     data = train_data if split == 'train' else val_data
@@ -69,6 +69,32 @@ def get_batch(split):
     return x.to(device), y.to(device)
 
 
+
+# -------------------------------------------------------------------------------------------------------------------------
+# helper function to estimate loss in training loop
+# -------------------------------------------------------------------------------------------------------------------------
+@torch.no_grad
+def estimate_loss():
+    avg_losses = {}
+    
+    model.eval()
+
+    for split_mode in ['train', 'val']:
+        losses = torch.zeros(eval_iterations)
+
+        for i in range(eval_iterations):
+            X, Y = get_batch(split_mode)
+            logits, loss = model(X, Y)
+            losses[i] = loss
+
+        avg_losses[split_mode] = losses.mean()
+    
+    model.train()
+
+    return avg_losses
+
+
+
 # -------------------------------------------------------------------------------------------------------------------------
 # define a super duper simple bigram language model for dummies like me
 # -------------------------------------------------------------------------------------------------------------------------
@@ -76,6 +102,7 @@ class BigramLanguageModel(nn.Module):
 
     def __init__(self, vocab_size) -> None:
         super().__init__()
+
         self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
 
     def forward(self, idx, targets = None):
@@ -91,6 +118,24 @@ class BigramLanguageModel(nn.Module):
         
         return logits, loss
     
+    def generate(self, idx, max_new_tokens):
+        for _ in range(max_new_tokens):
+            # make a forward pass
+            logits, loss = self(idx)
+
+            # take out the logits for last time step
+            logits = logits[:, -1, :]    # B, T, C  ->  B, C
+
+            # get the probabilities from the logits
+            probs = F.softmax(logits, dim=-1)
+
+            # sample the next char from probs distribution
+            idx_next = torch.multinomial(probs, num_samples=1)
+
+            # add it to the T+1 timestep in input indexes
+            idx = torch.cat((idx, idx_next), dim = 1)
+
+        return idx
 
 
 # -------------------------------------------------------------------------------------------------------------------------
@@ -111,10 +156,17 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 # train the model
 # -------------------------------------------------------------------------------------------------------------------------
 for iter in range(max_iters):
+
+    # if eval interval, run loss estimation
+    if iter % eval_interval == 0:
+        losses = estimate_loss()
+        print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f} ")
+
     xb, yb = get_batch('train')
 
-    logits, loss = model.forward(xb, yb)
+    logits, loss = model(xb, yb)
     optimizer.zero_grad(set_to_none=True)
+    loss.backward()
     optimizer.step()
 
 
@@ -122,9 +174,12 @@ for iter in range(max_iters):
 # -------------------------------------------------------------------------------------------------------------------------
 # basic driver code
 # -------------------------------------------------------------------------------------------------------------------------
-batches = torch.stack([train_data[i: i+block_size] for i in torch.randint(0, vocab_size,(4,))])
-print([decode(batch) for batch in batches.tolist()])
-BigramLanguageModel(vocab_size).forward(batches, targets=batches)
+# batches = torch.stack([train_data[i: i+block_size] for i in torch.randint(0, vocab_size,(4,))])
+# print([decode(batch) for batch in batches.tolist()])
+# BigramLanguageModel(vocab_size).forward(batches, targets=batches)
+
+context = torch.zeros((1,1), dtype=torch.long, device=device)
+print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
 
 
 
