@@ -6,7 +6,7 @@ from torch.nn import functional as F
 # -------------------------------------------------------------------------------------------------------------------------
 # define hyperparams 
 # -------------------------------------------------------------------------------------------------------------------------
-batch_size = 32
+batch_size = 16
 block_size = 64
 embedding_size = 64
 
@@ -242,29 +242,7 @@ class BigramLanguageModel(nn.Module):
             loss = F.cross_entropy(logits, targets)
         
         return logits, loss
-    
-    
-    def generate(self, idx, max_new_tokens):
-        for _ in range(max_new_tokens):
-            # crop tokens to block size
-            idx_block = idx[:, -block_size:]
 
-            # make a forward pass
-            logits, loss = self(idx_block)
-
-            # take out the logits for last time step
-            logits = logits[:, -1, :]    # B, T, C  ->  B, C
-
-            # get the probabilities from the logits
-            probs = F.softmax(logits, dim=-1)
-
-            # sample the next char from probs distribution
-            idx_next = torch.multinomial(probs, num_samples=1)
-
-            # add it to the T+1 timestep in input indexes
-            idx = torch.cat((idx, idx_next), dim = 1)
-
-        return idx
 
 
 
@@ -283,33 +261,66 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-# train the model
+# define the training loop
 # -------------------------------------------------------------------------------------------------------------------------
-for iter in range(max_iters):
+def train(iterations):
+    model.train()
 
-    # if eval interval, run loss estimation
-    if iter % eval_interval == 0:
-        losses = estimate_loss()
-        print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f} ")
+    for iter in range(iterations):
 
-    xb, yb = get_batch('train')
+        # if eval interval, run loss estimation
+        if iter % eval_interval == 0:
+            losses = estimate_loss()
+            print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f} ")
 
-    logits, loss = model(xb, yb)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()
+        xb, yb = get_batch('train')
+
+        logits, loss = model(xb, yb)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
 
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-# basic driver code
+# define the inference loop
 # -------------------------------------------------------------------------------------------------------------------------
-# batches = torch.stack([train_data[i: i+block_size] for i in torch.randint(0, vocab_size,(4,))])
-# print([decode(batch) for batch in batches.tolist()])
-# BigramLanguageModel(vocab_size).forward(batches, targets=batches)
+def blabber(idx, max_new_tokens):
+    model.eval()
+
+    for _ in range(max_new_tokens):
+        # crop tokens to block size
+        idx_block = idx[:, -block_size:]
+
+        # make a forward pass
+        logits, loss = model(idx_block)
+
+        # take out the logits for last time step
+        logits = logits[:, -1, :]    # B, T, C  ->  B, C
+
+        # get the probabilities from the logits
+        probs = F.softmax(logits, dim=-1)
+
+        # sample the next char from probs distribution
+        idx_next = torch.multinomial(probs, num_samples=1)
+
+        # add it to the T+1 timestep in input indexes
+        idx = torch.cat((idx, idx_next), dim = 1)
+
+    return idx
+
+
+
+
+# -------------------------------------------------------------------------------------------------------------------------
+# ready, set, goo...
+# -------------------------------------------------------------------------------------------------------------------------
+train(1000)
+
 
 context = torch.zeros((1,1), dtype=torch.long, device=device)
-print(decode(model.generate(context, max_new_tokens=2000)[0].tolist()))
+print(decode(blabber(context, max_new_tokens=2000)[0].tolist()))
 
 
 
