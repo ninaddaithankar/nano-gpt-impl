@@ -11,9 +11,9 @@ batch_size = 16
 block_size = 64
 embedding_size = 64
 
-max_iters = 2000
+max_iters = 5000
 eval_interval = 500
-checkpoint_interval = 1000
+checkpoint_interval = 2500
 learning_rate = 5e-4
 eval_iterations = 100
 dropout_percent = 0.1
@@ -284,7 +284,7 @@ def train(iterations, prev_iterations = 0):
     model.train()
 
     losses = {}
-    for iter in range(prev_iterations, prev_iterations + iterations + 1):
+    for iter in range(prev_iterations + 1, prev_iterations + iterations + 1):
 
         # if eval interval, run loss estimation
         if iter % eval_interval == 0:
