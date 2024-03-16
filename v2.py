@@ -7,14 +7,16 @@ from torch.nn import functional as F
 # define hyperparams 
 # -------------------------------------------------------------------------------------------------------------------------
 batch_size = 32
-block_size = 8
-embedding_size = 32
+block_size = 64
+embedding_size = 64
 
-max_iters = 10000
+max_iters = 30000
 eval_interval = 1000
-learning_rate = 1e-3
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+learning_rate = 5e-4
 eval_iterations = 200
+dropout_percent = 0.1
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 
@@ -96,6 +98,7 @@ def estimate_loss():
 
 
 
+
 # -------------------------------------------------------------------------------------------------------------------------
 # define a single head attention module
 # -------------------------------------------------------------------------------------------------------------------------
@@ -108,7 +111,10 @@ class Head(nn.Module):
         self.key   = nn.Linear(embedding_size, head_size, bias=False)
         self.query = nn.Linear(embedding_size, head_size, bias=False)
         self.value = nn.Linear(embedding_size, head_size, bias=False)
+
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+        self.dropout = nn.Dropout(dropout_percent)
 
     def forward(self, x):
         B, T, C = x.shape
@@ -119,6 +125,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2,-1) * C**-0.5
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
         wei = F.softmax(wei, dim=-1)
+        wei = self.dropout(wei)
 
         v = self.value(x)
         out = wei @ v
@@ -137,9 +144,18 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
 
         self.heads = nn.ModuleList(Head(head_size) for _ in range(num_heads))
+        self.projection = nn.Linear(embedding_size, embedding_size)
+
+        self.dropout = nn.Dropout(dropout_percent)
+
 
     def forward(self, x):
-        return torch.cat([head(x) for head in self.heads], dim=-1)
+        out = torch.cat([head(x) for head in self.heads], dim=-1)
+        out = self.projection(out)
+        out = self.dropout(out)
+        
+        return out
+    
     
 
 
@@ -152,8 +168,10 @@ class FeedForward(nn.Module):
         super().__init__()
 
         self.net = nn.Sequential(
-            nn.Linear(n_embd, n_embd),
-            nn.ReLU()
+            nn.Linear(n_embd, n_embd * 4),
+            nn.ReLU(),
+            nn.Linear(n_embd * 4, n_embd),
+            nn.Dropout(dropout_percent)
         )
 
     def forward(self, x):
@@ -168,14 +186,19 @@ class FeedForward(nn.Module):
 class Block(nn.Module):
 
     def __init__(self, n_embd, n_heads):
+        super().__init__()
+
         meta_nembd = n_embd//n_heads
 
         self.self_attention_heads = MultiHeadAttention(n_heads, meta_nembd)
         self.feed_forward = FeedForward(n_embd)
 
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
+
     def forward(self, x):
-        x = x + self.self_attention_heads(x)
-        x = x + self.feed_forward(x)
+        x = x + self.self_attention_heads(self.ln1(x))
+        x = x + self.feed_forward(self.ln2(x))
 
         return x
     
@@ -197,8 +220,10 @@ class BigramLanguageModel(nn.Module):
             Block(embedding_size, 4),
             Block(embedding_size, 4),
             Block(embedding_size, 4),
+            nn.LayerNorm(embedding_size)
         )
         self.language_model_head = nn.Linear(embedding_size, vocab_size)
+
 
     def forward(self, idx, targets = None):
         token_embeddings = self.token_embedding_table(idx)
@@ -217,6 +242,7 @@ class BigramLanguageModel(nn.Module):
             loss = F.cross_entropy(logits, targets)
         
         return logits, loss
+    
     
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
@@ -239,6 +265,7 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim = 1)
 
         return idx
+
 
 
 # -------------------------------------------------------------------------------------------------------------------------
@@ -282,7 +309,7 @@ for iter in range(max_iters):
 # BigramLanguageModel(vocab_size).forward(batches, targets=batches)
 
 context = torch.zeros((1,1), dtype=torch.long, device=device)
-print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
+print(decode(model.generate(context, max_new_tokens=2000)[0].tolist()))
 
 
 
