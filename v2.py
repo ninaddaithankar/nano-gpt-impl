@@ -7,7 +7,7 @@ from torch.nn import functional as F
 # define hyperparams 
 # -------------------------------------------------------------------------------------------------------------------------
 batch_size = 32
-block_size = 16
+block_size = 8
 embedding_size = 32
 
 max_iters = 10000
@@ -129,6 +129,21 @@ class Head(nn.Module):
 
 
 # -------------------------------------------------------------------------------------------------------------------------
+# create a multi-head attention module that will run multiple smaller single head attention modules in parallel
+# -------------------------------------------------------------------------------------------------------------------------
+class MultiHeadAttention(nn.Module):
+
+    def __init__(self, num_heads, head_size) -> None:
+        super().__init__()
+
+        self.heads = nn.ModuleList(Head(head_size) for _ in range(num_heads))
+
+    def forward(self, x):
+        return torch.cat([head(x) for head in self.heads], dim=-1)
+
+
+
+# -------------------------------------------------------------------------------------------------------------------------
 # define a super duper simple bigram language model for dummies like me
 # -------------------------------------------------------------------------------------------------------------------------
 class BigramLanguageModel(nn.Module):
@@ -139,7 +154,7 @@ class BigramLanguageModel(nn.Module):
         self.token_embedding_table = nn.Embedding(vocab_size, embedding_size)
         self.position_embedding_table = nn.Embedding(vocab_size, embedding_size)
 
-        self.self_attention_head = Head(embedding_size)
+        self.self_attention_heads = MultiHeadAttention(4, embedding_size//4)
         self.language_model_head = nn.Linear(embedding_size, vocab_size)
 
     def forward(self, idx, targets = None):
@@ -147,7 +162,7 @@ class BigramLanguageModel(nn.Module):
         postion_embeddings = self.position_embedding_table(idx)
 
         x = token_embeddings + postion_embeddings
-        x = self.self_attention_head(x)
+        x = self.self_attention_heads(x)
         logits = self.language_model_head(x)
         
         if targets == None:
