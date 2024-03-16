@@ -140,6 +140,45 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, x):
         return torch.cat([head(x) for head in self.heads], dim=-1)
+    
+
+
+# -------------------------------------------------------------------------------------------------------------------------
+# create a feed-forward layer for letting the model think
+# -------------------------------------------------------------------------------------------------------------------------
+class FeedForward(nn.Module):
+
+    def __init__(self, n_embd):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Linear(n_embd, n_embd),
+            nn.ReLU()
+        )
+
+    def forward(self, x):
+        return self.net(x)
+    
+
+
+
+# -------------------------------------------------------------------------------------------------------------------------
+# create a decoder block as seen in the transformer paper
+# -------------------------------------------------------------------------------------------------------------------------
+class Block(nn.Module):
+
+    def __init__(self, n_embd, n_heads):
+        meta_nembd = n_embd//n_heads
+
+        self.self_attention_heads = MultiHeadAttention(n_heads, meta_nembd)
+        self.feed_forward = FeedForward(n_embd)
+
+    def forward(self, x):
+        x = x + self.self_attention_heads(x)
+        x = x + self.feed_forward(x)
+
+        return x
+    
 
 
 
@@ -154,7 +193,11 @@ class BigramLanguageModel(nn.Module):
         self.token_embedding_table = nn.Embedding(vocab_size, embedding_size)
         self.position_embedding_table = nn.Embedding(vocab_size, embedding_size)
 
-        self.self_attention_heads = MultiHeadAttention(4, embedding_size//4)
+        self.decoder_blocks = nn.Sequential(
+            Block(embedding_size, 4),
+            Block(embedding_size, 4),
+            Block(embedding_size, 4),
+        )
         self.language_model_head = nn.Linear(embedding_size, vocab_size)
 
     def forward(self, idx, targets = None):
@@ -162,7 +205,7 @@ class BigramLanguageModel(nn.Module):
         postion_embeddings = self.position_embedding_table(idx)
 
         x = token_embeddings + postion_embeddings
-        x = self.self_attention_heads(x)
+        x = self.decoder_blocks(x)
         logits = self.language_model_head(x)
         
         if targets == None:
