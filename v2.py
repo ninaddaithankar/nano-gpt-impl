@@ -11,9 +11,9 @@ block_size = 64
 embedding_size = 64
 
 max_iters = 30000
-eval_interval = 1000
+eval_interval = 500
 learning_rate = 5e-4
-eval_iterations = 200
+eval_iterations = 100
 dropout_percent = 0.1
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
