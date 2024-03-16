@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 
@@ -10,13 +11,16 @@ batch_size = 16
 block_size = 64
 embedding_size = 64
 
-max_iters = 30000
+max_iters = 2000
 eval_interval = 500
+checkpoint_interval = 1000
 learning_rate = 5e-4
 eval_iterations = 100
 dropout_percent = 0.1
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+CHECKPOINT_PATH = './checkpoints/latest_checkpoint.pth'
 
 
 
@@ -259,19 +263,38 @@ model = BigramLanguageModel().to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 
+def checkpoint(model_state_dict, optim_state_dict, epoch, losses):
+    state = {
+        'epoch' : epoch,
+        'model_state_dict': model_state_dict,
+        'optim_state_dict': optim_state_dict,
+        'losses': losses
+    }
+
+    if not os.path.exists('./checkpoints'):
+        os.mkdir('./checkpoints')
+
+    torch.save(state, CHECKPOINT_PATH)
+
 
 # -------------------------------------------------------------------------------------------------------------------------
 # define the training loop
 # -------------------------------------------------------------------------------------------------------------------------
-def train(iterations):
+def train(iterations, prev_iterations = 0):
     model.train()
 
-    for iter in range(iterations):
+    losses = {}
+    for iter in range(prev_iterations, prev_iterations + iterations + 1):
 
         # if eval interval, run loss estimation
         if iter % eval_interval == 0:
             losses = estimate_loss()
             print(f"step {iter}: train loss {losses['train']:.4f}, validation loss {losses['val']:.4f} ")
+            
+        # if checkpoint interval, save model/optimizer weights and current losses
+        if iter % checkpoint_interval == 0:
+            checkpoint(model.state_dict(), optimizer.state_dict(), iter, losses)
+            print(f"======= checkpoint saved at iter: {iter} =======")
 
         xb, yb = get_batch('train')
 
@@ -316,11 +339,24 @@ def blabber(idx, max_new_tokens):
 # -------------------------------------------------------------------------------------------------------------------------
 # ready, set, goo...
 # -------------------------------------------------------------------------------------------------------------------------
-train(1000)
+
+if os.path.exists(CHECKPOINT_PATH):
+    state = torch.load(CHECKPOINT_PATH)
+    model.load_state_dict(state['model_state_dict'])
+    optimizer.load_state_dict(state['optim_state_dict'])
+    epoch = state['epoch']
+    losses = state['losses']
+
+    print(f"Loaded from checkpoint on iter: {epoch} with train loss {losses['train']:.4f}, validation loss {losses['val']:.4f}")
+    print("Resuming model training...")
+    train(max_iters, epoch)
+
+else:
+    train(max_iters)
 
 
 context = torch.zeros((1,1), dtype=torch.long, device=device)
-print(decode(blabber(context, max_new_tokens=2000)[0].tolist()))
+print(decode(blabber(context, max_new_tokens=1000)[0].tolist()))
 
 
 
