@@ -7,7 +7,7 @@ from torch.nn import functional as F
 # -------------------------------------------------------------------------------------------------------------------------
 # define hyperparams 
 # -------------------------------------------------------------------------------------------------------------------------
-batch_size = 16
+batch_size = 8
 block_size = 64
 embedding_size = 64
 
@@ -102,6 +102,23 @@ def estimate_loss():
 
 
 
+# -------------------------------------------------------------------------------------------------------------------------
+# helper function to checkpoint training progress
+# -------------------------------------------------------------------------------------------------------------------------
+def checkpoint(model_state_dict, optim_state_dict, epoch, losses):
+    state = {
+        'epoch' : epoch,
+        'model_state_dict': model_state_dict,
+        'optim_state_dict': optim_state_dict,
+        'losses': losses
+    }
+
+    if not os.path.exists('./checkpoints'):
+        os.mkdir('./checkpoints')
+
+    torch.save(state, CHECKPOINT_PATH)
+
+
 
 # -------------------------------------------------------------------------------------------------------------------------
 # define a single head attention module
@@ -138,7 +155,6 @@ class Head(nn.Module):
     
 
 
-
 # -------------------------------------------------------------------------------------------------------------------------
 # create a multi-head attention module that will run multiple smaller single head attention modules in parallel
 # -------------------------------------------------------------------------------------------------------------------------
@@ -162,7 +178,6 @@ class MultiHeadAttention(nn.Module):
     
     
 
-
 # -------------------------------------------------------------------------------------------------------------------------
 # create a feed-forward layer for letting the model think
 # -------------------------------------------------------------------------------------------------------------------------
@@ -179,8 +194,7 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x):
-        return self.net(x)
-    
+        return self.net(x)  
 
 
 
@@ -208,11 +222,10 @@ class Block(nn.Module):
     
 
 
-
 # -------------------------------------------------------------------------------------------------------------------------
 # define a super duper simple bigram language model for dummies like me
 # -------------------------------------------------------------------------------------------------------------------------
-class BigramLanguageModel(nn.Module):
+class NanoTransformer(nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
@@ -249,32 +262,18 @@ class BigramLanguageModel(nn.Module):
 
 
 
-
 # -------------------------------------------------------------------------------------------------------------------------
 # init the model
 # -------------------------------------------------------------------------------------------------------------------------
-model = BigramLanguageModel().to(device)
+model = NanoTransformer().to(device)
 
 
 
 # -------------------------------------------------------------------------------------------------------------------------
-# create a PyTorch optimizer
+# create the optimizer
 # -------------------------------------------------------------------------------------------------------------------------
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
-
-def checkpoint(model_state_dict, optim_state_dict, epoch, losses):
-    state = {
-        'epoch' : epoch,
-        'model_state_dict': model_state_dict,
-        'optim_state_dict': optim_state_dict,
-        'losses': losses
-    }
-
-    if not os.path.exists('./checkpoints'):
-        os.mkdir('./checkpoints')
-
-    torch.save(state, CHECKPOINT_PATH)
 
 
 # -------------------------------------------------------------------------------------------------------------------------
@@ -302,7 +301,6 @@ def train(iterations, prev_iterations = 0):
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
-
 
 
 
@@ -335,7 +333,6 @@ def blabber(idx, max_new_tokens):
 
 
 
-
 # -------------------------------------------------------------------------------------------------------------------------
 # ready, set, goo...
 # -------------------------------------------------------------------------------------------------------------------------
@@ -355,6 +352,10 @@ else:
     train(max_iters)
 
 
+
+# -------------------------------------------------------------------------------------------------------------------------
+# blabber what you learnt...
+# -------------------------------------------------------------------------------------------------------------------------
 context = torch.zeros((1,1), dtype=torch.long, device=device)
 print(decode(blabber(context, max_new_tokens=1000)[0].tolist()))
 
